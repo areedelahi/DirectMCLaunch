@@ -1,6 +1,7 @@
 name: Build x64 Release Artifacts
 
 on:
+  push:
   workflow_dispatch:
   release:
     types: [created]
