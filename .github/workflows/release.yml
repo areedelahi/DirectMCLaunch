@@ -1,0 +1,103 @@
+name: Build x64 Release Artifacts
+
+on:
+  workflow_dispatch:
+  release:
+    types: [created]
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Build Windows Executable
+        run: cargo build --release
+      - name: Upload Windows Executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: DirectMCLaunch-Windows-x64
+          path: target/release/DirectMCLaunch.exe
+
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Linux GUI Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libx11-dev libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev libssl-dev libgtk-3-dev desktop-file-utils
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Build Linux Binary
+        run: cargo build --release
+      - name: Package AppImage
+        run: |
+          mkdir -p AppDir/usr/bin AppDir/usr/share/icons/hicolor/256x256/apps AppDir/usr/share/applications
+          cp target/release/DirectMCLaunch AppDir/usr/bin/
+          cp assets/mc_real.png AppDir/usr/share/icons/hicolor/256x256/apps/directmclaunch.png
+          echo -e "[Desktop Entry]\nName=DirectMCLaunch\nExec=DirectMCLaunch\nIcon=directmclaunch\nType=Application\nCategories=Game;" > AppDir/usr/share/applications/directmclaunch.desktop
+          wget -c -nv "https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage"
+          chmod +x linuxdeploy-x86_64.AppImage
+          ./linuxdeploy-x86_64.AppImage --appdir AppDir -e AppDir/usr/bin/DirectMCLaunch -i AppDir/usr/share/icons/hicolor/256x256/apps/directmclaunch.png -d AppDir/usr/share/applications/directmclaunch.desktop --output appimage
+      - name: Upload Linux AppImage
+        uses: actions/upload-artifact@v4
+        with:
+          name: DirectMCLaunch-Linux-x64
+          path: "*.AppImage"
+
+  build-mac:
+    runs-on: macos-13 # macos-13 forces Intel x64 architecture (macos-14 is ARM64)
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Build Mac Binary
+        run: cargo build --release
+      - name: Package Mac App
+        run: |
+          mkdir -p release/DirectMCLaunch.app/Contents/MacOS release/DirectMCLaunch.app/Contents/Resources
+          cp target/release/DirectMCLaunch release/DirectMCLaunch.app/Contents/MacOS/
+          
+          # Generate icns file natively
+          mkdir -p app.iconset
+          cp assets/app_icon.png app.iconset/icon_512x512@2x.png
+          sips -z 512 512 assets/app_icon.png --out app.iconset/icon_512x512.png
+          sips -z 256 256 assets/app_icon.png --out app.iconset/icon_256x256.png
+          sips -z 128 128 assets/app_icon.png --out app.iconset/icon_128x128.png
+          iconutil -c icns app.iconset -o release/DirectMCLaunch.app/Contents/Resources/AppIcon.icns
+          rm -rf app.iconset
+          
+          # Create Info.plist
+          cat <<EOF > release/DirectMCLaunch.app/Contents/Info.plist
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>CFBundleExecutable</key>
+              <string>DirectMCLaunch</string>
+              <key>CFBundleIconFile</key>
+              <string>AppIcon</string>
+              <key>CFBundleIdentifier</key>
+              <string>com.areedelahi.directmclaunch</string>
+              <key>CFBundleName</key>
+              <string>DirectMCLaunch</string>
+              <key>CFBundlePackageType</key>
+              <string>APPL</string>
+              <key>CFBundleShortVersionString</key>
+              <string>1.0</string>
+              <key>LSMinimumSystemVersion</key>
+              <string>10.12</string>
+          </dict>
+          </plist>
+          EOF
+          
+          # Zip the app bundle to preserve execution permissions and symlinks
+          cd release
+          zip -ry DirectMCLaunch-Mac-x64.zip DirectMCLaunch.app
+      - name: Upload Mac App Bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: DirectMCLaunch-Mac-x64
+          path: release/DirectMCLaunch-Mac-x64.zip
